@@ -1,17 +1,17 @@
 {
-  "name": "@ivelin-web/tempo-mcp-server",
-  "version": "1.3.0",
+  "name": "@fluentdata-ai/tempo-mcp-server",
+  "version": "1.3.2",
   "description": "MCP server for managing Tempo worklogs in Jira",
   "main": "build/index.js",
   "type": "module",
   "bin": {
-    "tempo-mcp-server": "./build/index.js"
+    "tempo-mcp-server": "build/index.js"
   },
   "scripts": {
     "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
     "start": "node build/index.js",
     "dev": "tsx watch src/index.ts",
-    "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts",
+    "inspect": "npx @modelcontextprotocol/inspector@latest tsx src/index.ts",
     "prepare": "npm run build && husky",
     "lint": "eslint",
     "format": "prettier . --write",
@@ -35,19 +35,23 @@
     "ai"
   ],
   "author": "Ivelin Ivanov <ivelinivanov1999@gmail.com>",
+  "contributors": [
+    "Edgar Isai Salgado Cortez <edgarisaiwr@gmail.com>"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ivelin-web/tempo-mcp-server.git"
+    "url": "git+https://github.com/fluentdata-co/tempo-mcp-server.git"
   },
   "bugs": {
-    "url": "https://github.com/ivelin-web/tempo-mcp-server/issues"
+    "url": "https://github.com/fluentdata-co/tempo-mcp-server/issues"
   },
-  "homepage": "https://github.com/ivelin-web/tempo-mcp-server#readme",
+  "homepage": "https://github.com/fluentdata-co/tempo-mcp-server#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.6.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.6.7",
-    "zod": "^3.24.2"
+    "dotenv": "^17.3.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",

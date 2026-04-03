@@ -1,7 +1,9 @@
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 import {
   ToolResponse,
   TempoWorklog,
+  TempoWorklogListResponse,
+  TempoAccountResponse,
   WorklogResult,
   WorklogError,
   WorklogEntry,
@@ -9,6 +11,7 @@ import {
 import config from './config.js';
 import { getCurrentUserAccountId, getIssue } from './jira.js';
 import { formatError, getIssueKeysMap, calculateEndTime } from './utils.js';
+import server from './index.js';
 
 // API client for Tempo
 const api = axios.create({
@@ -35,7 +38,6 @@ export async function retrieveWorklogs(
     let isFirstRequest = true;
     let pageCount = 0;
     const MAX_PAGES = 500; // Safety limit to prevent infinite loops (25,000 worklogs max)
-
     do {
       if (pageCount >= MAX_PAGES) {
         console.warn(
@@ -46,12 +48,28 @@ export async function retrieveWorklogs(
 
       let response;
       if (isFirstRequest) {
-        response = await api.get(`/worklogs/user/${accountId}`, {
-          params: { from: startDate, to: endDate },
-        });
+        response = await api
+          .get<TempoWorklogListResponse>(`/worklogs/user/${accountId}`, {
+            params: { from: startDate, to: endDate },
+          })
+          .catch((error) => {
+            if (error.response?.status === 401) {
+              throw new Error(
+                'Invalid API token. Please check your Tempo API token and try again.',
+              );
+            }
+            throw error;
+          });
         isFirstRequest = false;
       } else {
-        response = await axios.get(nextUrl!, {
+        const expectedOrigin = new URL(config.tempoApi.baseUrl).origin;
+        const nextUrlOrigin = new URL(nextUrl!).origin;
+        if (nextUrlOrigin !== expectedOrigin) {
+          throw new Error(
+            `Invalid pagination URL: expected origin ${expectedOrigin}, got ${nextUrlOrigin}`,
+          );
+        }
+        response = await axios.get<TempoWorklogListResponse>(nextUrl!, {
           headers: {
             Authorization: `Bearer ${config.tempoApi.token}`,
             'Content-Type': 'application/json',
@@ -63,7 +81,7 @@ export async function retrieveWorklogs(
       allWorklogs = allWorklogs.concat(pageWorklogs);
 
       // Check if there's a next page
-      nextUrl = response.data.metadata?.next || null;
+      nextUrl = response?.data?.metadata?.next || null;
       pageCount++;
     } while (nextUrl);
 
@@ -129,32 +147,37 @@ export async function createWorklog(
   issueKey: string,
   timeSpentHours: number,
   date: string,
-  description: string = '',
+  description: string,
   startTime: string | undefined = undefined,
+  remainingEstimateHours: number | undefined = undefined,
 ): Promise<ToolResponse> {
   try {
     // Get issue ID and account ID
     const issue = await getIssue(issueKey);
     const accountId = await getCurrentUserAccountId();
-
-    const account = await fetchTempoAccountFromIssue(issue);
-
     const { id: issueId } = issue;
+    const account = await fetchTempoAccountFromIssue(issue);
+    const timeSpentSeconds = Math.round(timeSpentHours * 3600);
+
     // Prepare payload
     const payload = {
       issueId: Number(issueId),
-      timeSpentSeconds: Math.round(timeSpentHours * 3600),
+      timeSpentSeconds,
+      billableSeconds: timeSpentSeconds,
       startDate: date,
       authorAccountId: accountId,
-      description,
+      description: description || null,
       ...(startTime && { startTime: `${startTime}:00` }),
+      ...(remainingEstimateHours !== undefined && {
+        remainingEstimateSeconds: Math.round(remainingEstimateHours * 3600),
+      }),
       ...(account && {
         attributes: [{ key: '_Account_', value: account.key }],
       }),
     };
 
     // Submit the worklog
-    const response = await api.post('/worklogs', payload);
+    const response = await api.post<TempoWorklog>('/worklogs', payload);
 
     // Calculate end time if start time is provided
     let timeInfo = '';
@@ -174,6 +197,7 @@ export async function createWorklog(
       ],
     };
   } catch (error) {
+    console.error(error);
     return {
       isError: true,
       content: [
@@ -212,7 +236,6 @@ export async function bulkCreateWorklogs(
     for (const [issueKey, entries] of Object.entries(entriesByIssueKey)) {
       try {
         const issue = await getIssue(issueKey);
-
         const account = await fetchTempoAccountFromIssue(issue);
 
         // Format entries for API
@@ -230,7 +253,7 @@ export async function bulkCreateWorklogs(
         const { id: issueId } = issue;
 
         // Submit bulk request
-        const response = await api.post(
+        const response = await api.post<TempoWorklog[]>(
           `/worklogs/issue/${Number(issueId)}/bulk`,
           formattedEntries,
         );
@@ -435,22 +458,16 @@ export async function deleteWorklog(worklogId: string): Promise<ToolResponse> {
 }
 
 /**
- *  @returns The tempo account that is associated with the issue, if any
+ * @returns The tempo account associated with the issue via the Jira custom field, if any
  */
 async function fetchTempoAccountFromIssue({
   tempoAccountId,
 }: {
   tempoAccountId?: string;
-}) {
-  return tempoAccountId ? await retrieveAccount(tempoAccountId) : undefined;
-}
-
-/**
- * Retrieve account details by ID
- */
-async function retrieveAccount(
-  id: string,
-): Promise<{ key: string; name: string }> {
-  const response = await api.get(`/accounts/${id}`);
+}): Promise<TempoAccountResponse | undefined> {
+  if (!tempoAccountId) return undefined;
+  const response = await api.get<TempoAccountResponse>(
+    `/accounts/${tempoAccountId}`,
+  );
   return response.data;
 }

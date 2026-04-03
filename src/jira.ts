@@ -1,6 +1,12 @@
 import axios from 'axios';
-import { JiraUser, issueIdSchema, idOrKeySchema } from './types.js';
+import {
+  JiraUser,
+  JiraIssueResponse,
+  issueIdSchema,
+  idOrKeySchema,
+} from './types.js';
 import config from './config.js';
+import server from './index.js';
 
 // Build authorization header based on auth type
 function getAuthHeader(): string {
@@ -13,7 +19,7 @@ function getAuthHeader(): string {
 
 // Jira API client with authentication
 const jiraApi = axios.create({
-  baseURL: config.jiraApi.baseUrl,
+  baseURL: `${config.jiraApi.baseUrl}/rest/api/3`,
   headers: {
     Authorization: getAuthHeader(),
     Accept: 'application/json',
@@ -40,33 +46,32 @@ function formatJiraError(error: unknown, context: string): Error {
  * - For Basic auth: searches by configured email
  */
 export async function getCurrentUserAccountId(): Promise<string> {
-  try {
-    if (config.jiraApi.authType === 'bearer') {
-      // Bearer auth: get current user directly
-      const response = await jiraApi.get<JiraUser>('/rest/api/3/myself');
-      return response.data.accountId;
-    }
-
-    // Basic auth: search by email
-    const response = await jiraApi.get<JiraUser[]>('/rest/api/3/user/search', {
-      params: { query: config.jiraApi.email },
-    });
-
-    const users = response.data;
-    if (!users || users.length === 0) {
-      throw new Error(`No user found with email: ${config.jiraApi.email}`);
-    }
-
-    // Find exact email match
-    const user = users.find((u) => u.emailAddress === config.jiraApi.email);
-    if (!user) {
-      throw new Error(`No exact match for email: ${config.jiraApi.email}`);
-    }
-
-    return user.accountId;
-  } catch (error) {
-    throw formatJiraError(error, 'Failed to get user account ID');
+  if (config.jiraApi.authType === 'bearer') {
+    // Bearer auth: get current user directly
+    const response = await jiraApi.get<JiraUser>('/myself');
+    return response.data.accountId;
   }
+
+  // Basic auth: search by email
+  const response = await jiraApi
+    .get<JiraUser[]>('user/search', {
+      params: { query: config.jiraApi.email },
+    })
+    .catch((error) => {
+      throw new Error(`could not fetch user from jira: ${error}`);
+    });
+  const users = response.data;
+  if (!users || users.length === 0) {
+    throw new Error(`No user found with email: ${config.jiraApi.email}`);
+  }
+
+  // Find exact email match
+  const user = users.find((u) => u.emailAddress === config.jiraApi.email);
+  if (!user) {
+    throw new Error(`No exact match for email: ${config.jiraApi.email}`);
+  }
+
+  return user.accountId;
 }
 
 /**
@@ -80,11 +85,11 @@ export async function getIssueKeyById(
     const result = issueIdSchema().safeParse(issueId);
     if (!result.success) {
       throw new Error(
-        result.error.errors[0].message || 'Issue ID validation failed',
+        result.error.issues[0].message || 'Issue ID validation failed',
       );
     }
 
-    const response = await jiraApi.get(`/rest/api/3/issue/${issueId}`);
+    const response = await jiraApi.get<JiraIssueResponse>(`/issue/${issueId}`);
     return response.data.key;
   } catch (error) {
     throw formatJiraError(error, `Failed to get issue key for ID ${issueId}`);
@@ -105,17 +110,19 @@ export async function getIssue(idOrKey: string | number): Promise<{
     const result = idOrKeySchema().safeParse(idOrKey);
     if (!result.success) {
       throw new Error(
-        result.error.errors[0].message || 'Issue identifier validation failed',
+        result.error.issues[0].message || 'Issue identifier validation failed',
       );
     }
 
-    const response = await jiraApi.get(`/rest/api/3/issue/${idOrKey}`);
+    const response = await jiraApi.get<JiraIssueResponse>(`/issue/${idOrKey}`);
 
     // Find the Tempo account key
     const tempoAccountId = config.jiraApi.tempoAccountCustomFieldId
-      ? response.data.fields[
-          `customfield_${config.jiraApi.tempoAccountCustomFieldId}`
-        ].id
+      ? (
+          response.data.fields[
+            `customfield_${config.jiraApi.tempoAccountCustomFieldId}`
+          ] as { id?: string } | null
+        )?.id
       : undefined;
 
     const id = response.data.id;

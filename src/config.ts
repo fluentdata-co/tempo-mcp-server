@@ -4,6 +4,21 @@
  */
 import { envSchema, Config } from './types.js';
 import { ZodError } from 'zod';
+import { config as loadEnv } from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Load environment variables from .env file
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envLoadResult = loadEnv({ path: path.resolve(__dirname, '../.env') });
+
+if (envLoadResult.error) {
+  console.error(
+    '[WARN] Could not load .env file:',
+    envLoadResult.error.message,
+  );
+}
 
 // Validate environment variables
 function validateEnv() {
@@ -14,7 +29,7 @@ function validateEnv() {
     // Format and display validation errors
     console.error('[ERROR] Environment validation failed:');
     if (error instanceof ZodError) {
-      error.errors.forEach((err) => {
+      error.issues.forEach((err) => {
         console.error(`- ${err.path.join('.')}: ${err.message}`);
       });
     } else {

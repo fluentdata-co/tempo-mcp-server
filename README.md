@@ -47,7 +47,7 @@ The easiest way to use this server is via npx without installation:
   "mcpServers": {
     "Jira_Tempo": {
       "command": "npx",
-      "args": ["-y", "@ivelin-web/tempo-mcp-server"],
+      "args": ["-y", "@esalgado/tempo-mcp-server"],
       "env": {
         "TEMPO_API_TOKEN": "your_tempo_api_token_here",
         "JIRA_API_TOKEN": "your_jira_api_token_here",

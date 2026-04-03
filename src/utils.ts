@@ -7,7 +7,28 @@ import { getIssueKeyById } from './jira.js';
  */
 export function formatError(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    return (error.response?.data as any)?.message || error.message;
+    const data = error.response?.data as any;
+    const status = error.response?.status;
+    const parts: string[] = [];
+
+    if (status) parts.push(`[${status}]`);
+
+    if (data?.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+      const errorMessages = data.errors.map((e: any) =>
+        e.message
+          ? e.field
+            ? `${e.field}: ${e.message}`
+            : e.message
+          : JSON.stringify(e),
+      );
+      parts.push(errorMessages.join('; '));
+    } else if (data?.message) {
+      parts.push(data.message);
+    } else {
+      parts.push(error.message);
+    }
+
+    return parts.join(' ');
   }
   return (error as Error).message;
 }

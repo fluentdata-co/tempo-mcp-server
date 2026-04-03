@@ -43,18 +43,38 @@ export const worklogEntrySchema = z.object({
 
 export type WorklogEntry = z.infer<typeof worklogEntrySchema>;
 
+function getToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getStartOfWeek(): string {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day; // back to Monday
+  d.setDate(d.getDate() + diff);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // MCP tool schemas
 export const retrieveWorklogsSchema = z.object({
-  startDate: dateSchema(),
-  endDate: dateSchema(),
+  startDate: dateSchema().default(getStartOfWeek),
+  endDate: dateSchema().default(getToday),
 });
 
 export const createWorklogSchema = z.object({
   issueKey: issueKeySchema(),
-  timeSpentHours: z.number().positive('Time spent must be positive'),
+  timeSpentHours: z
+    .number()
+    .positive('Time spent must be positive')
+    .default(1.5),
   date: dateSchema(),
-  description: z.string().optional().default(''),
-  startTime: timeSchema().optional(),
+  description: z.string(),
+  startTime: timeSchema().optional().default('08:00'),
+  remainingEstimateHours: z
+    .number()
+    .nonnegative('Remaining estimate must be non-negative')
+    .optional(),
 });
 
 export const bulkCreateWorklogsSchema = z.object({
@@ -77,24 +97,76 @@ export const deleteWorklogSchema = z.object({
 
 // API interfaces
 export interface JiraUser {
+  self?: string;
   accountId: string;
-  emailAddress: string;
+  accountType?: string;
+  active?: boolean;
   displayName?: string;
+  emailAddress?: string;
+  avatarUrls?: {
+    '16x16': string;
+    '24x24': string;
+    '32x32': string;
+    '48x48': string;
+  };
+}
+
+export interface JiraIssueResponse {
+  id: string;
+  key: string;
+  self: string;
+  fields: {
+    summary?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface TempoWorklog {
-  tempoWorklogId: string;
-  issueId: string;
+  tempoWorklogId: number;
+  issue: {
+    self: string;
+    id: number;
+  };
   timeSpentSeconds: number;
+  billableSeconds?: number;
   startDate: string;
+  startTime?: string;
   description?: string;
+  createdAt: string;
+  updatedAt: string;
   author: {
+    self: string;
     accountId: string;
   };
-  billableSeconds?: number;
-  remainingEstimateSeconds?: number;
-  startTime?: string;
-  attributes?: Array<any>;
+  attributes?: {
+    self: string;
+    values: Array<{
+      key: string;
+      value: string;
+    }>;
+  };
+}
+
+export interface TempoWorklogListMetadata {
+  count: number;
+  offset: number;
+  limit: number;
+  next?: string;
+}
+
+export interface TempoWorklogListResponse {
+  results: TempoWorklog[];
+  metadata: TempoWorklogListMetadata;
+}
+
+export interface TempoAccountResponse {
+  self: string;
+  id: number;
+  key: string;
+  name: string;
+  status?: string;
+  global?: boolean;
+  monthlyBudget?: number;
 }
 
 // MCP response interfaces
@@ -112,7 +184,7 @@ export interface WorklogResult {
   issueKey: string;
   timeSpentHours: number;
   date: string;
-  worklogId: string | null;
+  worklogId: number | null;
   success: boolean;
   startTime?: string;
   endTime?: string;
